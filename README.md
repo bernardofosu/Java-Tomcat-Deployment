@@ -131,6 +131,15 @@ This guide provides step-by-step instructions for installing Apache Tomcat 9.0.6
   - [Starting and Stopping Tomcat](#starting-and-stopping-tomcat)
     - [1️⃣ How Maven knows what type to package](#1️⃣-how-maven-knows-what-type-to-package)
     - [We need to move the .war file to webapps](#we-need-to-move-the-war-file-to-webapps)
+- [🚀 Maven → Tomcat Deployment Flow](#-maven--tomcat-deployment-flow)
+  - [1️⃣ Maven Determines the Output Name](#1️⃣-maven-determines-the-output-name)
+  - [2️⃣ Where It Is in Tomcat](#2️⃣-where-it-is-in-tomcat)
+  - [3️⃣ Exploded vs WAR Deployment](#3️⃣-exploded-vs-war-deployment)
+  - [4️⃣ How to Change the URL / Context Path](#4️⃣-how-to-change-the-url--context-path)
+  - [5️⃣ Maven `pom.xml` Metadata](#5️⃣-maven-pomxml-metadata)
+    - [Properties](#properties)
+  - [✅ Summary: How `hello-world` Became the URL](#-summary-how-hello-world-became-the-url)
+  - [🌐 Deployment Flow Diagram](#-deployment-flow-diagram)
   - [License](#license)
 
 ## Prerequisites
@@ -258,9 +267,20 @@ cd ~
 
 git clone <git-url>
 
-cd 
+cd Java-Tomcat-Deployment 
 
 mvn package
+
+[INFO] Packaging webapp
+[INFO] Assembling webapp [hello-world] in [/home/ubuntu/Java-Tomcat-Deployment/target/hello-world]
+[INFO] Processing war project
+[INFO] Copying webapp resources [/home/ubuntu/Java-Tomcat-Deployment/src/main/webapp]
+[INFO] Building war: /home/ubuntu/Java-Tomcat-Deployment/target/hello-world.war
+[INFO]
+```
+copy
+```sh
+sudo cp /home/ubuntu/Java-Tomcat-Deployment/target/hello-world.war /opt/apache-tomcat-9.0.65/webapps/
 ```
 
 ### 1️⃣ How Maven knows what type to package
@@ -331,6 +351,168 @@ Here’s a quick guide to what each file and folder in a Tomcat installation con
   ./bin/startup.sh   # Start
   ./bin/shutdown.sh  # Stop
 ```
+
+# 🚀 Maven → Tomcat Deployment Flow
+
+This note explains **how a Maven project gets packaged and deployed to Tomcat**, including how the URL path is determined.
+
+---
+
+## 1️⃣ Maven Determines the Output Name
+
+When you build a project with Maven:
+
+```bash
+mvn package
+```
+
+* Maven reads the `pom.xml` file.
+* The **artifact name** comes from:
+
+```xml
+<groupId>com.example</groupId>
+<artifactId>hello-world</artifactId>
+<version>1.0-SNAPSHOT</version>
+<packaging>war</packaging>
+```
+
+* The **artifactId** (`hello-world`) becomes the **name of the output folder** and the **.war file**:
+
+```
+target/hello-world/          # 📂 exploded folder (classes + resources)
+target/hello-world.war       # 🗜 packaged WAR file
+```
+
+✅ That’s why you see `hello-world` and `hello-world.war` in `target/`.
+
+---
+
+## 2️⃣ Where It Is in Tomcat
+
+Tomcat serves web applications from:
+
+```
+$CATALINA_HOME/webapps/
+```
+
+* In your case:
+
+```
+$CATALINA_HOME = /opt/apache-tomcat-9.0.65
+```
+
+* By default, Tomcat deploys any WAR file or folder inside `webapps/` automatically.
+* The **context path** (part after `http://host:8080/`) comes from the WAR or folder name:
+
+```
+webapps/hello-world.war  → 🌐 accessible at http://<host>:8080/hello-world
+```
+
+So your URL:
+
+```
+http://52.90.59.244:8080/hello-world
+```
+
+…is **directly derived from the artifactId** of your Maven project.
+
+---
+
+## 3️⃣ Exploded vs WAR Deployment
+
+* `hello-world/` → 📂 exploded directory: Tomcat can run it directly without re-extracting the WAR.
+* `hello-world.war` → 🗜 packaged WAR file: Tomcat will unpack it automatically into `webapps/hello-world/` when it starts.
+
+You can copy either to Tomcat:
+
+```bash
+cp target/hello-world.war /opt/apache-tomcat-9.0.65/webapps/
+```
+
+Tomcat will then serve it at:
+
+```
+http://<host>:8080/hello-world
+```
+
+---
+
+## 4️⃣ How to Change the URL / Context Path
+
+If you want a different URL than `hello-world`:
+
+1. **Rename the WAR file before deploying:**
+
+```bash
+cp target/hello-world.war /opt/apache-tomcat-9.0.65/webapps/myapp.war
+```
+
+→ Accessible at:
+
+```
+http://<host>:8080/myapp
+```
+
+2. **Or configure `<Context>`** in `conf/server.xml` or a separate `META-INF/context.xml`.
+
+---
+
+## 5️⃣ Maven `pom.xml` Metadata
+
+```xml
+<modelVersion>4.0.0</modelVersion>
+<groupId>com.example</groupId>
+<artifactId>hello-world</artifactId>
+<packaging>war</packaging>
+<name>hello-world</name>
+<version>1.0-SNAPSHOT</version>
+<description>hello-world</description>
+```
+
+* **groupId** → 📦 package namespace (not used in URL/WAR name)
+* **artifactId** → 🏷 key name for WAR, exploded folder, and Tomcat context path ✅
+* **version** → optional in filename (e.g., `hello-world-1.0-SNAPSHOT.war`)
+* **packaging** → tells Maven to use the WAR plugin 🗜
+* **name** → metadata for IDEs/reports 📝
+
+### Properties
+
+```xml
+<properties>
+  <java.version>1.8</java.version>
+  <maven.compiler.plugin.version>3.8.1</maven.compiler.plugin.version>
+  <jetty-maven-plugin.version>9.4.43.v20210629</jetty-maven-plugin.version>
+  <cargo-maven-plugin.version>1.8.8</cargo-maven-plugin.version>
+  <maven.war.plugin.version>3.3.2</maven.war.plugin.version>
+</properties>
+```
+
+* Define Java version, compiler plugin, and deployment plugins ⚙️
+* **Do not affect context path** — artifactId still decides folder name and URL
+
+---
+
+## ✅ Summary: How `hello-world` Became the URL
+
+1. `<artifactId>hello-world</artifactId>` → Maven builds `hello-world.war` in `target/`.
+2. Tomcat deploys `hello-world.war` into `webapps/` → creates `webapps/hello-world/`.
+3. Tomcat sets **context path** = folder name → accessible at:
+
+```
+http://<host>:8080/hello-world
+```
+
+* You can rename the WAR or use `<Context>` to change the URL 🌐.
+
+---
+
+## 🌐 Deployment Flow Diagram
+
+```
+pom.xml 📄 → mvn package 🏗 → target/hello-world.war 🗜 → Tomcat webapps/hello-world/ 🌐 → URL http://host:8080/hello-world
+```
+
+
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See the [LICENSE](https://www.apache.org/licenses/LICENSE-2.0) file for more details.
